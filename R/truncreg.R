@@ -1,45 +1,68 @@
-ml.truncreg <- function(param, X, y, gradient = FALSE, hessian = FALSE, fit = FALSE, point, direction){
-  beta <- param[1:ncol(X)]
-  sigma <- param[length(param)]
-  bX <- as.numeric(crossprod(beta,t(X)))
-  resid <- y-bX
-  if (direction == "left"){
-    trunc <- bX-point
-    sgn <- 1
-  }
-  else{
-    trunc <- point-bX
-    sgn <- -1
-  }
-  mills <- dnorm(trunc/sigma)/pnorm(trunc/sigma)
+ml.truncreg <- function(param, X, y, gradient = FALSE, hessian = FALSE, fit = FALSE, point, direction, scaled){
+    beta <- param[1:ncol(X)]
+    sigma <- param[length(param)]
+    bX <- as.numeric(crossprod(beta, t(X)))
+    sgn <- ifelse(direction == "left", +1, -1)
+    if (!scaled){
+        resid <- (y - bX)
+        trunc <- (bX - point)
+        # Update of the mills function, use logs to avoid Inf
+        #mills <- dnorm(sgn * trunc / sigma) / pnorm(sgn * trunc / sigma)
+        mills <- exp(dnorm(sgn * trunc / sigma, log = TRUE) - pnorm(sgn * trunc / sigma, log.p = TRUE))
+        lnL <-  - log(sigma) + dnorm(resid / sigma, log = TRUE) - pnorm(sgn * trunc / sigma, log.p = TRUE)
+        if (gradient){
+            gbX <- resid / sigma ^ 2 - sgn * mills / sigma
+            gsigma <- - 1 / sigma + resid ^ 2 / sigma ^ 3  + sgn * mills * trunc / sigma ^ 2
+            gradi <- cbind(gbX * X, as.numeric(gsigma))
+            attr(lnL, "gradient") <- gradi
+        }
+        if (fit) attr(lnL, "fit") <- bX
+        if (hessian){
+            bb <- -1 / sigma ^ 2 + mills * (sgn * trunc / sigma + mills) / sigma ^ 2
+            ss <- 1 / sigma ^ 2 - 3 * resid ^ 2 / sigma ^ 4 - 2 * mills * sgn * trunc / sigma ^ 3 +
+                mills * (sgn * trunc / sigma + mills) * trunc / sigma ^ 3
+            ss <- 1 / sigma ^ 2 - 3 * resid ^ 2 / sigma ^ 4 - 2 * mills * sgn * trunc / sigma ^ 3 +
+                mills * (sgn * trunc / sigma + mills) * trunc^2 / sigma ^ 4
 
-  lnL <- sum(log(dnorm(resid/sigma))-log(sigma)
-               -log(pnorm(trunc/sigma)))
-  if (gradient){
-    gbX <- resid/sigma^2 -sgn/sigma*mills
-    gsigma <- resid^2/sigma^3-1/sigma+trunc/sigma^2*mills
-    gradi <- cbind(gbX*X,as.numeric(gsigma))
-    attr(lnL,"gradient") <- gradi
-  }
-  if (fit){
-    attr(lnL,"fit") <- bX
-  }
-  if (hessian){
-    bb <- mills*(trunc/sigma+mills)/sigma^2-1/sigma^2
-    ss <- -3*resid^2/sigma^4+1/sigma^2+trunc^2/sigma^4*mills*(mills+trunc/sigma)-
-      2*trunc*mills/sigma^3
-    bs <- -2*resid/sigma^3+sgn*(mills/sigma^2-trunc/sigma^3*mills*(mills+trunc/sigma))
-    bb <- crossprod(bb*X,X)
-    bs <- apply(bs*X,2,sum)
-    ss <- sum(ss)
-    h <- rbind(cbind(bb,bs),c(bs,ss))
-    attr(lnL,"hessian") <- h
-  }
-  lnL
+            bs <- - 2 * resid / sigma ^ 3 + sgn * mills / sigma ^ 2 -
+                mills * (mills + sgn * trunc / sigma) * trunc / sigma ^ 3
+            bb <- crossprod(bb * X, X)
+            bs <- apply(bs * X, 2, sum)
+            ss <- sum(ss)
+            h <- rbind(cbind(bb, bs), c(bs, ss))
+            attr(lnL,"hessian") <- h
+        }
+    }
+    else{
+        lnL <- - log(sigma) + dnorm(y / sigma - bX, log = TRUE) - pnorm(sgn * (bX - point / sigma), log.p = TRUE)
+        # Update of the mills function, use logs to avoid Inf (YC 2015/12/11)
+        # mills <- dnorm(sgn * (bX - point / sigma)) / pnorm(sgn * (bX - point / sigma))
+        mills <- exp(dnorm(sgn * (bX - point / sigma), log = TRUE) - pnorm(sgn * (bX - point / sigma), log.p = TRUE))
+        if (gradient){
+            gbX <- (y / sigma - bX) - mills * sgn
+            gsigma <- - 1 / sigma + (y / sigma - bX) * y / sigma ^ 2 - sgn * mills * point / sigma ^ 2
+            gradi <- cbind(gbX * X, as.numeric(gsigma))
+            attr(lnL, "gradient") <- gradi
+        }
+        if (fit) attr(lnL, "fit") <- bX * sigma
+        if(hessian){
+            bb <- -1 + mills * (mills + sgn * (bX - point / sigma))
+            bs <- - y / sigma ^ 2 + (mills + sgn * (bX - point / sigma)) * mills * point / sigma ^ 2
+            ss <- 1 / sigma ^ 2 - 3 * y ^ 2 / sigma ^ 4 + 2 * bX * y / sigma ^ 3 +
+                mills * (mills + sgn * (bX - point / sigma)) * point ^ 2 / sigma ^ 4 +
+                    2 * sgn * mills * point / sigma ^ 3
+            bb <- crossprod(bb * X, X)
+            bs <- apply(bs * X, 2, sum)
+            ss <- sum(ss)
+            h <- rbind(cbind(bb, bs), c(bs, ss))
+            attr(lnL,"hessian") <- h
+        }
+    }
+    lnL
 }
 
 truncreg <- function(formula, data, subset, weights, na.action, point = 0, direction = "left",
-  model = TRUE, y = FALSE, x = FALSE, ...)
+  model = TRUE, y = FALSE, x = FALSE, scaled = FALSE, ...)
 {
   formula.type <- TRUE
   if (class(formula[[3]]) == "name"){
@@ -70,7 +93,7 @@ truncreg <- function(formula, data, subset, weights, na.action, point = 0, direc
   direction <- match.arg(direction, c("left", "right"))
   point <- rep(point, length.out = length(Y))
   
-  result <- truncreg.fit(X, Y, point, direction, ...)
+  result <- truncreg.fit(X, Y, point, direction, scaled, ...)
   result$call <- cl
   result$terms <- mt
   if(model) result$model <- mf
@@ -79,7 +102,7 @@ truncreg <- function(formula, data, subset, weights, na.action, point = 0, direc
   result
 }
 
-truncreg.fit <- function(X, y, point, direction, ...)
+truncreg.fit <- function(X, y, point, direction, scaled, ...)
 {
   ## check input
   if(direction == "left" & any(y < point)) stop("response not truncated, contains observations < 'point'")
@@ -90,38 +113,53 @@ truncreg.fit <- function(X, y, point, direction, ...)
   if (is.null(dots$iterlim)) iterlim <- 50 else iterlim <- dots$iterlim
   if (is.null(dots$print.level)) print.level <- 0 else print.level <- dots$print.level
   
-  oldoptions <- options(warn=-1)
+  oldoptions <- options(warn = - 1)
   on.exit(options(oldoptions))
   start.time <- proc.time()
 
   f <- function(param)  ml.truncreg(param,  X = X, y = y,
-                                    gradient = FALSE, hessian = FALSE,
+                                    gradient = TRUE, hessian = TRUE,
                                     fit = FALSE, point = point,
-                                    direction = direction)
-  g <- function(param){
-    attr(ml.truncreg(param, X = X, y = y,
-                     gradient = TRUE, hessian = FALSE,
-                     fit = FALSE, point = point,
-                     direction = direction),"gradient")
-  } 
-  h <- function(param){
-    attr(ml.truncreg(param, X = X, y = y,
-                     gradient = FALSE, hessian = TRUE,
-                     fit = FALSE, point = point,
-                     direction = direction),"hessian")
-  } 
-
-  linmod <- lm.fit(X, y)
-  start <- c(linmod$coefficients, sqrt(sum(linmod$residuals^2)/linmod$df.residual))
-  maxl <- maxLik(f, g, h, start = start, method = method,
+                                    direction = direction, scaled = scaled)
+  linmod <- lm(y ~ X - 1)
+  start <- c(coef(linmod), summary(linmod)$sigma)
+  if (scaled) start[1:ncol(X)] <- start[1:ncol(X)] / start[ncol(X) + 1]
+  if (FALSE){
+      f0 <-  ml.truncreg(start,  X = X, y = y,
+                       gradient = TRUE, hessian = FLSE,
+                       fit = FALSE, point = point, direction = direction, scaled = scaled)
+      agrad <- apply(attr(f0, "gradient"), 2, sum)
+      ostart <- start
+      of <- sum(f(start))
+      ngrad <- c()
+      eps <- 1E-5
+      for (i in 1:length(start)){
+          start <- ostart
+          start[i] <- start[i] + eps
+          ngrad <- c(ngrad, (sum(f(start)) - of) / eps)
+      }
+      start <- ostart
+  }
+  maxl <- maxLik(f, start = start, method = method,
                  iterlim = iterlim, print.level = print.level)
-  grad.conv <- g(maxl$estimate)
   coefficients <- maxl$estimate
-  vcov <- -solve(maxl$hessian)
+
+  if (scaled){
+      coefficients[1:ncol(X)] <- coefficients[1:ncol(X)] * coefficients[ncol(X) + 1]
+      f <- function(param)  ml.truncreg(param,  X = X, y = y,
+                                        gradient = TRUE, hessian = TRUE,
+                                        fit = FALSE, point = point,
+                                        direction = direction, scaled = FALSE)
+      maxl <- maxLik(f, start = coefficients, method = method,
+                     iterlim = 0, print.level = print.level)
+  }
+  coefficients <- maxl$estimate
+  grad.conv <- maxl$gradient
+  vcov <- - solve(maxl$hessian)
   fit <- attr(ml.truncreg(coefficients, X = X, y = y,
-                          gradient = FALSE, hessian = FALSE,
+                          gradient = TRUE, hessian = TRUE,
                           fit = TRUE, point = point,
-                          direction = direction), "fit")
+                          direction = direction, scaled = scaled), "fit")
   names(fit) <- rownames(X)
   logLik <- maxl$maximum
   attr(logLik,"df") <- length(coefficients)
@@ -146,6 +184,7 @@ truncreg.fit <- function(X, y, point, direction, ...)
                  fitted.values = fit,
                  logLik = logLik,
                  gradient = grad.conv,
+                 gradientObs = maxl$gradientObs,
 		 nobs = length(y),
                  call = NULL,
 		 terms = NULL,
@@ -206,6 +245,11 @@ summary.truncreg <- function (object,...){
 print.summary.truncreg <- function(x,digits= max(3, getOption("digits") - 2),width=getOption("width"),...){
   cat("\nCall:\n")
   print(x$call)
+  if (!is.null(x$est.stat)){
+      cat("\n")
+      print(x$est.stat)
+  }
+  
   cat("\n")
   cat("\nCoefficients :\n")
   printCoefmat(x$coefficients,digits=digits)
@@ -236,4 +280,35 @@ predict.truncreg <- function(object, newdata = NULL, na.action = na.pass, ...)
     rval <- drop(X %*% head(object$coefficients, -1))
   }
   return(rval)
+}
+
+print.est.stat <- function(x, ...){
+  et <- x$elaps.time[3]
+  i <- x$nb.iter[1]
+  halton <- x$halton
+  method <- x$method
+  if (!is.null(x$type) && x$type != "simple"){
+    R <- x$nb.draws
+    cat(paste("Simulated maximum likelihood with", R, "draws\n"))
+  }
+  s <- round(et,0)
+  h <- s%/%3600
+  s <- s-3600*h
+  m <- s%/%60
+  s <- s-60*m
+  cat(paste(method, "method\n"))
+  tstr <- paste(h, "h:", m, "m:", s, "s", sep="")
+  cat(paste(i,"iterations,",tstr,"\n"))
+  if (!is.null(halton)) cat("Halton's sequences used\n")
+  if (!is.null(x$eps)) cat(paste("g'(-H)^-1g =", sprintf("%5.3G", as.numeric(x$eps)),"\n"))
+  if (is.numeric(x$code)){
+    msg <- switch(x$code,
+                  "1" = "gradient close to zero",
+                  "2" = "successive function values within tolerance limits",
+                  "3" = "last step couldn't find higher value",
+                  "4" = "iteration limit exceeded"
+                  )
+    cat(paste(msg, "\n"))
+  }
+  else cat(paste(x$code, "\n"))
 }
