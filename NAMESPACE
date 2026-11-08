@@ -1,9 +1,13 @@
+importFrom("maxLik",
+  "maxLik")
+
+importFrom("stats",
+  "coef", "delete.response", "dnorm", "fitted", "lm", "logLik",
+  "model.frame", "model.matrix", "model.response", "na.pass",
+  "pnorm", "predict", "printCoefmat", "residuals", "terms", "vcov")
+
 export("truncreg")
-import("maxLik")
-importFrom("stats", "coef", "delete.response", "dnorm", "fitted", "lm",
-           "model.frame", "model.matrix", "model.response", "na.pass",
-           "pnorm", "printCoefmat", "terms", "vcov")
-importFrom("utils", "head")
+
 S3method("coef", "truncreg")
 S3method("fitted", "truncreg")
 S3method("logLik", "truncreg")
@@ -16,3 +20,4 @@ S3method("summary", "truncreg")
 S3method("print", "summary.truncreg")
 S3method("vcov", "truncreg")
 
+S3method(distributions3::prodist, "truncreg")

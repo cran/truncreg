@@ -64,9 +64,9 @@ ml.truncreg <- function(param, X, y, gradient = FALSE, hessian = FALSE, fit = FA
 truncreg <- function(formula, data, subset, weights, na.action, point = 0, direction = "left",
   model = TRUE, y = FALSE, x = FALSE, scaled = FALSE, ...){
     formula.type <- TRUE
-    if (class(formula[[3]]) == "name"){
+    if (inherits(formula[[3]], "name")) {
         X <- try(eval(formula[[3]],sys.frame(which=-3)),silent = TRUE)
-        if (class(X) == "matrix") formula.type <- FALSE else formula.type <- TRUE
+        if (inherits(X, "matrix")) formula.type <- FALSE else formula.type <- TRUE
     }
     
     cl <- match.call()
@@ -274,14 +274,25 @@ model.matrix.truncreg <- function(object, ...)
 
 predict.truncreg <- function(object, newdata = NULL, na.action = na.pass, ...) 
 {
-    if(missing(newdata)) {
+    if(missing(newdata) || is.null(newdata)) {
         rval <- object$fitted.values
     } else {
         mt <- delete.response(object$terms)
         X <- model.matrix(mt, model.frame(mt, newdata, na.action = na.action))
-        rval <- drop(X %*% head(object$coefficients, -1))
+        rval <- drop(X %*% object$coefficients[-length(object$coefficients)])
     }
     return(rval)
+}
+
+prodist.truncreg <- function(object, newdata = NULL, na.action = na.pass, ...) 
+{
+    stopifnot(requireNamespace("crch"))
+    crch::TruncatedNormal(
+        mu = predict(object, newdata = newdata, na.action = na.action, ...),
+        sigma = object$coefficient[length(object$coefficients)],
+        left = if (object$direction == "left") object$point else -Inf,
+        right = if (object$direction == "right") object$point else Inf
+    )
 }
 
 print.est.stat <- function(x, ...){

@@ -11,6 +11,7 @@
 \alias{summary.truncreg}
 \alias{print.summary.truncreg}
 \alias{vcov.truncreg}
+\alias{prodist.truncreg}
 
 \title{Truncated Gaussian Response Models}
 
@@ -57,7 +58,7 @@ truncreg(formula, data, subset, weights, na.action,
   \item{point}{the truncation point used,}
   \item{direction}{the truncation direction used,}
   \item{est.stat}{some information about the estimation (time used,
-    optimization method),}
+    optimization method).}
 }
 
 \details{
@@ -70,6 +71,12 @@ truncreg(formula, data, subset, weights, na.action,
   \code{\link[stats]{vcov}}, \code{\link[stats]{logLik}}, \code{\link[stats]{residuals}}, 
   \code{\link[stats]{predict}}, \code{\link[stats]{fitted}}, \code{\link[stats]{model.frame}}, 
   and \code{\link[stats]{model.matrix}}.
+  
+  Finally, provided that the \pkg{distributions3} and \pkg{crch} packages are installed,
+  a probability distribution object of class \code{\link[crch]{TruncatedNormal}}
+  can be extracted/predicted, enabling the workflow provided by the \pkg{topmodels}
+  package (including probabilistic forecasting, proper scoring rules, and diagnostic
+  graphics).
 }
 
 \seealso{\code{\link[maxLik]{maxLik}}, \code{mhurdle}}
